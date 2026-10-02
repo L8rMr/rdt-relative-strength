@@ -1,0 +1,45 @@
+//@version=6
+// RRS vs SPY (Fast/Slow)
+// Real Relative Strength of the chart symbol against a benchmark, smoothed into
+// a fast and a slow line. An independent implementation of the publicly
+// described RRS concept; not derived from any vendor's source code.
+indicator("RRS vs SPY (Fast/Slow)", overlay=false)
+
+benchmark = input.symbol("SPY", "Benchmark")
+rrsLen    = input.int(12, "RRS Lookback (bars)")
+fastLen   = input.int(8,  "Fast Smoothing")
+slowLen   = input.int(21, "Slow Smoothing")
+
+// Price move and volatility of the chart symbol over the lookback.
+symbolMove = close - close[rrsLen]
+symbolATR  = ta.atr(rrsLen)
+
+// Same two readings for the benchmark, fetched on the chart's timeframe.
+[benchClose, benchATR] = request.security(benchmark, timeframe.period, [close, ta.atr(rrsLen)])
+benchMove = benchClose - benchClose[rrsLen]
+
+// powerIndex: the benchmark's move in units of its own ATR.
+// rawRRS: how far the symbol moved beyond what the benchmark's move implies,
+// in units of the symbol's ATR.
+powerIndex = benchMove / benchATR
+rawRRS     = (symbolMove - powerIndex * symbolATR) / symbolATR
+
+fastLine  = ta.ema(rawRRS, fastLen)
+slowLine  = ta.ema(rawRRS, slowLen)
+rsBullish = fastLine > slowLine
+
+// Signals print only on closed bars, so a triangle never disappears once drawn.
+bullCross = ta.crossover(fastLine, slowLine)  and barstate.isconfirmed
+bearCross = ta.crossunder(fastLine, slowLine) and barstate.isconfirmed
+
+fastPlot = plot(fastLine, "Fast RRS", color=color.lime, linewidth=2)
+slowPlot = plot(slowLine, "Slow RRS", color=color.orange, linewidth=2)
+fill(fastPlot, slowPlot, color = rsBullish ? color.new(color.green, 85) : color.new(color.red, 85))
+hline(0, "Zero Line", color=color.gray)
+bgcolor(rsBullish ? color.new(color.green, 95) : color.new(color.red, 95))
+
+plotshape(bullCross, title="RS Bull Signal", style=shape.triangleup,   location=location.bottom, color=color.lime, size=size.small)
+plotshape(bearCross, title="RS Bear Signal", style=shape.triangledown, location=location.top,    color=color.red,  size=size.small)
+
+alertcondition(bullCross, title="RRS Bull Cross (Confirmed)", message="{{ticker}}: RRS turned bullish vs benchmark")
+alertcondition(bearCross, title="RRS Bear Cross (Confirmed)", message="{{ticker}}: RRS turned bearish vs benchmark")
